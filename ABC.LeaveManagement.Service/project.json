@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0-*",
+
+  "dependencies": {
+    "ABC.LeaveManagement.Core": "1.0.0-*",
+    "ABC.LeaveManagement.Data": "1.0.0-*",
+    "AutoMapper": "5.2.0",
+    "NETStandard.Library": "1.6.1"
+  },
+
+  "frameworks": {
+    "netstandard1.6": {
+      "imports": "dnxcore50"
+    }
+  }
+}

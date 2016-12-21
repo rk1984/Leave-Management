@@ -1,0 +1,15 @@
+{
+  "version": "1.0.0-*",
+  "dependencies": {
+    "ABC.LeaveManagement.Core": "1.0.0-*",
+    "Microsoft.EntityFrameworkCore.SqlServer": "1.1.0",
+    "NETStandard.Library": "1.6.1",
+    "Microsoft.EntityFrameworkCore.Tools": "1.1.0-preview4-final",
+    "Microsoft.AspNetCore.Identity.EntityFrameworkCore": "1.1.0"
+  },
+  "frameworks": {
+    "netstandard1.6": {
+      "imports": "dnxcore50"
+    }
+  }
+}
