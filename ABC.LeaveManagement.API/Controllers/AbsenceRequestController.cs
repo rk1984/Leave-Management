@@ -10,11 +10,13 @@ using ABC.LeaveManagement.Service.Dto;
 using AutoMapper;
 using ABC.LeaveManagement.Core;
 using ABC.LeaveManagement.Core.Enum;
+using Microsoft.AspNetCore.Authorization;
 
 namespace ABC.LeaveManagement.API.Controllers
 {
     [Route("/api/absencerequest")]
     [Produces("application/json")]
+    [Authorize]
     public class AbsenceRequestController : Controller
     {
         private readonly IAbsenceRequestService _absenceRequestService;
@@ -89,6 +91,7 @@ namespace ABC.LeaveManagement.API.Controllers
         [ProducesResponseType(typeof(OkObjectResult), 200)]
         [ProducesResponseType(typeof(BadRequestObjectResult), 404)]
         [ProducesResponseType(typeof(UnauthorizedResult), 401)]
+        [Authorize(Roles = "Admin")]
         public IActionResult Post([FromBody]ApproveAbsenceRequestViewModel approveAbsenceRequestViewModel)
         {
             if (ModelState.IsValid)
@@ -98,8 +101,8 @@ namespace ABC.LeaveManagement.API.Controllers
                 if (emplyee == null)
                     return BadRequest("Employee doesn't exist");
 
-                if(emplyee.JobPosition != JobPosition.Admin)
-                    return Unauthorized();                
+                if (emplyee.JobPosition != JobPosition.Admin)
+                    return Unauthorized();
 
                 _absenceRequestService.ApproveAbsenceRequest(approveAbsenceRequestViewModel.AbsenceRequestId);
                 return Ok("Absense request approved");

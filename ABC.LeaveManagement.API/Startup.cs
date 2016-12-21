@@ -1,6 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Security.Claims;
 using System.Threading.Tasks;
 using ABC.LeaveManagement.API.Configuration;
 using ABC.LeaveManagement.API.Controllers;
@@ -20,6 +23,9 @@ using Microsoft.EntityFrameworkCore;
 using Swashbuckle.Swagger.Model;
 using Swashbuckle.Swagger;
 using ABC.LeaveManagement.Data.IdentityModel;
+using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Http.Authentication;
+using Newtonsoft.Json.Linq;
 
 namespace ABC.LeaveManagement.API
 {
@@ -59,25 +65,9 @@ namespace ABC.LeaveManagement.API
             services.AddIdentity<LeaveManagementUser, IdentityRole>(cfg =>
             {
                 cfg.User.RequireUniqueEmail = true;
-                cfg.Cookies.ApplicationCookie.LoginPath = "/auth/login";
-                cfg.Cookies.ApplicationCookie.Events = new CookieAuthenticationEvents()
-                {
-                    OnRedirectToLogin = async ctx =>
-                    {
-                        if (ctx.Request.Path.StartsWithSegments("/api") &&
-                          ctx.Response.StatusCode == 200)
-                        {
-                            ctx.Response.StatusCode = 401;
-                        }
-                        else
-                        {
-                            ctx.Response.Redirect(ctx.RedirectUri);
-                        }
-                        await Task.Yield();
-                    }
-                };
             })
-            .AddEntityFrameworkStores<LeaveManagementDbContext>();
+            .AddEntityFrameworkStores<LeaveManagementDbContext>()
+            .AddDefaultTokenProviders();
 
 
             services.AddScoped<IRepository<AbsenceRequest>, Repository<AbsenceRequest>>();
@@ -86,6 +76,10 @@ namespace ABC.LeaveManagement.API
             services.AddScoped<IEmployeeService, EmployeeService>();
 
             services.AddTransient<LeaveManagementDbContextSeed>();
+
+            // Add authentication services
+            services.AddAuthentication(
+                options => options.SignInScheme = CookieAuthenticationDefaults.AuthenticationScheme);
 
             // Add framework services.
             services.AddMvc();
@@ -118,17 +112,84 @@ namespace ABC.LeaveManagement.API
 
             app.UseCookieAuthentication(new CookieAuthenticationOptions
             {
-                AutomaticAuthenticate = false,
-                AutomaticChallenge = false
+                LoginPath = "/api/auth/externallogin",
+                AutomaticAuthenticate = true,
+                AutomaticChallenge = true
             });
 
             app.UseGoogleAuthentication(new GoogleOptions
-            {
+            {                
                 AuthenticationScheme = "Google",
                 DisplayName = "Google",
 
                 ClientId = "724404535545-tnlsb2qk4995ri16l238dke5hqnl2del.apps.googleusercontent.com",
-                ClientSecret = "0cToDFhE7fXzWeizdXjA8WJP"
+                ClientSecret = "0cToDFhE7fXzWeizdXjA8WJP",
+
+                Scope = { "email", "openid" },
+
+                Events = new OAuthEvents()
+                {
+                    // The OnCreatingTicket event is called after the user has been authenticated and the OAuth middleware has
+                    // created an auth ticket. We need to manually call the UserInformationEndpoint to retrieve the user's information,
+                    // parse the resulting JSON to extract the relevant information, and add the correct claims.
+                    OnCreatingTicket = async context =>
+                    {
+                        // Retrieve user info
+                        var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", context.AccessToken);
+                        request.Headers.Add("x-li-format", "json");
+                            // Tell LinkedIn we want the result in JSON, otherwise it will return XML
+
+                        var response = await context.Backchannel.SendAsync(request, context.HttpContext.RequestAborted);
+                        response.EnsureSuccessStatusCode();
+
+                        // Extract the user info object
+                        var user = JObject.Parse(await response.Content.ReadAsStringAsync());
+
+                        // Add the Name Identifier claim
+                        var userId = user.Value<string>("id");
+                        if (!string.IsNullOrEmpty(userId))
+                        {
+                            context.Identity.AddClaim(new Claim(ClaimTypes.NameIdentifier, userId,
+                                ClaimValueTypes.String, context.Options.ClaimsIssuer));
+                        }
+
+                        // Add the Name claim
+                        var formattedName = user.Value<string>("formattedName");
+                        if (!string.IsNullOrEmpty(formattedName))
+                        {
+                            context.Identity.AddClaim(new Claim(ClaimTypes.Name, formattedName, ClaimValueTypes.String,
+                                context.Options.ClaimsIssuer));
+                        }
+
+                        // Add the email address claim
+                        var email = user.Value<string>("emailAddress");
+                        if (!string.IsNullOrEmpty(email))
+                        {
+                            context.Identity.AddClaim(new Claim(ClaimTypes.Email, email, ClaimValueTypes.String,
+                                context.Options.ClaimsIssuer));
+                        }
+
+                        // Add the Profile Picture claim
+                        var pictureUrl = user.Value<string>("pictureUrl");
+                        if (!string.IsNullOrEmpty(email))
+                        {
+                            context.Identity.AddClaim(new Claim("profile-picture", pictureUrl, ClaimValueTypes.String,
+                                context.Options.ClaimsIssuer));
+                        }
+                    }
+                }
+            });
+
+            app.Map("/api/auth/externallogin", builder =>
+            {
+                builder.Run(async context =>
+                {
+                    // Return a challenge to invoke the LinkedIn authentication scheme
+                    await
+                        context.Authentication.ChallengeAsync("Google",
+                            properties: new AuthenticationProperties() {RedirectUri = "/api/absencerequest/"});
+                });
             });
 
             /*Normal MVC mappings*/
